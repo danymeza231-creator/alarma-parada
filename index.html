@@ -61,7 +61,29 @@ let destLng = null;
 let marker = null;
 
 // Crear mapa
-const map = L.map('map').setView([19.4326, -99.1332], 13);
+const map = L.map('map');
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19
+}).addTo(map);
+
+navigator.geolocation.getCurrentPosition(
+  pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+
+    map.setView([lat, lng], 15);
+    L.marker([lat, lng])
+      .addTo(map)
+      .bindPopup('📍 Estás aquí')
+      .openPopup();
+  },
+  err => {
+    alert('No se pudo obtener tu ubicación. Activa el GPS.');
+    map.setView([19.4326, -99.1332], 13);
+  },
+  { enableHighAccuracy: true }
+);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 // Seleccionar destino
