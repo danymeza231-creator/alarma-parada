@@ -1,83 +1,78 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <title>Alarma de Parada</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<title>Alarma de Parada — Modo Dios</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
 
-  <!-- PWA -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0d6efd">
+<link rel="stylesheet"
+ href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
-  <!-- Leaflet -->
-  <link rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-  <style>
-    body { margin:0; font-family: Arial; padding:10px; }
-    #map { height: 60vh; }
-    button, input {
-      width: 100%;
-      padding: 12px;
-      margin-top: 10px;
-      font-size: 16px;
-    }
-  </style>
+<style>
+body{margin:0;font-family:Arial;padding:10px;
+background:#111;color:#fff}
+#map{height:60vh}
+button,input,select{
+width:100%;padding:12px;margin-top:8px;font-size:16px}
+</style>
 </head>
 
 <body>
 
-<h3>🚍 Alarma de Parada (PRO)</h3>
-<p>Toca el mapa para marcar tu destino</p>
+<h3>👑 Alarma de Parada — DIOS</h3>
+
+<select id="mode">
+  <option value="walk">🚶 Caminando</option>
+  <option value="bus" selected>🚌 Camión</option>
+  <option value="car">🚗 Auto</option>
+</select>
 
 <div id="map"></div>
 
-<input id="radius" type="number" value="500" placeholder="Radio en metros">
-<button id="startBtn">▶ Activar alarma</button>
+<input id="radius" type="number" value="400">
+<button id="startBtn">▶ Iniciar</button>
 
 <p id="status">Esperando GPS…</p>
 
 <audio id="alarm" loop>
-  <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
+<source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
 </audio>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-let map, userMarker, destMarker, circle;
-let destLat=null, destLng=null;
-let alarmActive=false;
+let map=L.map('map');
+let userMarker,destMarker,circle;
+let destLat,destLng,active=false;
+let avisos={1000:false,500:false};
 
-map = L.map('map');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom:19
-}).addTo(map);
-
-// GPS REAL + seguimiento
-navigator.geolocation.watchPosition(pos=>{
-  const lat=pos.coords.latitude;
-  const lng=pos.coords.longitude;
+// GPS
+navigator.geolocation.watchPosition(p=>{
+  const lat=p.coords.latitude;
+  const lng=p.coords.longitude;
 
   if(!userMarker){
     map.setView([lat,lng],15);
-    userMarker=L.marker([lat,lng]).addTo(map)
-      .bindPopup("📍 Estás aquí");
-  } else {
-    userMarker.setLatLng([lat,lng]);
-  }
+    userMarker=L.marker([lat,lng]).addTo(map);
+  } else userMarker.setLatLng([lat,lng]);
 
-  if(destLat && alarmActive){
+  if(destLat && active){
     const d=dist(lat,lng,destLat,destLng);
     status.textContent=`Distancia: ${Math.round(d)} m`;
 
-    if(d<=parseInt(radius.value)){
-      activarAlarma();
-    }
+    if(d<1000 && !avisos[1000]) aviso("1 km para llegar");
+    if(d<500 && !avisos[500]) aviso("500 m para llegar");
+
+    if(d<=radius.value) final();
   }
 },{enableHighAccuracy:true});
 
-// Seleccionar destino
+// Elegir destino
 map.on('click',e=>{
   destLat=e.latlng.lat;
   destLng=e.latlng.lng;
@@ -87,74 +82,62 @@ map.on('click',e=>{
 
   destMarker=L.marker([destLat,destLng]).addTo(map);
   circle=L.circle([destLat,destLng],{
-    radius:parseInt(radius.value),
-    color:'red'
+    radius:+radius.value,color:'red'
   }).addTo(map);
 
-  localStorage.setItem('destino',
-    JSON.stringify({lat:destLat,lng:destLng})
-  );
-
-  status.textContent="Destino guardado";
+  localStorage.setItem("destino",
+   JSON.stringify({lat:destLat,lng:destLng}));
 });
 
-// Restaurar destino
-const saved=localStorage.getItem('destino');
-if(saved){
-  const d=JSON.parse(saved);
-  destLat=d.lat;
-  destLng=d.lng;
-}
+// Restaurar
+const s=localStorage.getItem("destino");
+if(s){const d=JSON.parse(s);destLat=d.lat;destLng=d.lng;}
 
-// Activar alarma
 startBtn.onclick=()=>{
-  if(!destLat){
-    alert("Selecciona un destino");
-    return;
-  }
-  alarmActive=true;
-  status.textContent="Alarma activada";
+  active=true;
+  avisos={1000:false,500:false};
+  status.textContent="Alarma activa";
 };
 
-// Distancia
+// Avisos
+function aviso(msg){
+  avisos[msg.includes("1 km")?1000:500]=true;
+  vibrar();
+  noti(msg);
+}
+
+// Final
+function final(){
+  alarm.play();
+  vibrar(true);
+  noti("🚨 BAJATE AHORA");
+  active=false;
+}
+
+// Utils
 function dist(a,b,c,d){
-  const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  const dLat=toRad(c-a);
-  const dLon=toRad(d-b);
-  const h=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*
-    Math.sin(dLon/2)**2;
+  const R=6371000,t=x=>x*Math.PI/180;
+  const h=Math.sin(t(c-a)/2)**2+
+  Math.cos(t(a))*Math.cos(t(c))*
+  Math.sin(t(d-b)/2)**2;
   return R*(2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h)));
 }
 
-// Alarma PRO
-function activarAlarma(){
-  alarm.play();
-  if(navigator.vibrate){
-    navigator.vibrate([500,300,500,300,500]);
-  }
-  mostrarNotificacion();
-  alarmActive=false;
+function vibrar(fuerte=false){
+  if(navigator.vibrate)
+    navigator.vibrate(fuerte?[800,400,800]:[300,200,300]);
 }
 
-// Notificación
-function mostrarNotificacion(){
-  if(Notification.permission==="granted"){
-    new Notification("🚨 Estás por llegar",{
-      body:"Bájate del camión",
-      requireInteraction:true
-    });
-  } else {
-    Notification.requestPermission();
-  }
+function noti(t){
+  if(Notification.permission==="granted")
+    new Notification(t,{requireInteraction:true});
+  else Notification.requestPermission();
 }
 </script>
 
 <script>
-if('serviceWorker'in navigator){
-  navigator.serviceWorker.register('service-worker.js');
-}
+if('serviceWorker'in navigator)
+navigator.serviceWorker.register('service-worker.js');
 </script>
 
 </body>
