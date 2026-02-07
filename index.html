@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Alarma de Parada</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#007bff">
+
+  <!-- Leaflet (Mapa) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      padding: 10px;
+    }
+    #map {
+      width: 100%;
+      height: 60vh;
+      border: 1px solid #ccc;
+    }
+    button, input {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>🚍 Alarma de Parada</h2>
+<p>Toca el mapa para elegir tu destino</p>
+
+<div id="map"></div>
+
+<input id="radius" type="number" value="500" placeholder="Distancia en metros">
+<button id="startBtn">Activar alarma</button>
+
+<p id="status">Destino no seleccionado</p>
+
+<audio id="alarm" loop>
+  <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
+</audio>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- APP LOGICA -->
+<script>
+let destLat = null;
+let destLng = null;
+let marker = null;
+
+// Crear mapa
+const map = L.map('map').setView([19.4326, -99.1332], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// Seleccionar destino
+map.on('click', e => {
+  destLat = e.latlng.lat;
+  destLng = e.latlng.lng;
+
+  if (marker) map.removeLayer(marker);
+  marker = L.marker([destLat, destLng]).addTo(map);
+
+  document.getElementById('status').textContent = 'Destino seleccionado';
+});
+
+// Calcular distancia
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = x => x * Math.PI / 180;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+// Activar alarma
+document.getElementById('startBtn').onclick = () => {
+  if (!destLat) {
+    alert('Selecciona un destino en el mapa');
+    return;
+  }
+
+  const radius = parseInt(document.getElementById('radius').value);
+
+  navigator.geolocation.watchPosition(
+    pos => {
+      const d = distanceMeters(
+        pos.coords.latitude,
+        pos.coords.longitude,
+        destLat,
+        destLng
+      );
+
+      document.getElementById('status').textContent =
+        `Distancia: ${Math.round(d)} metros`;
+
+      if (d <= radius) {
+        document.getElementById('alarm').play();
+        alert('🚨 Estás por llegar a tu parada');
+      }
+    },
+    err => alert('Error GPS: ' + err.message),
+    { enableHighAccuracy: true }
+  );
+};
+</script>
+
+<!-- SERVICE WORKER -->
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js')
+    .then(() => console.log('Service Worker OK'))
+    .catch(err => console.error('SW error', err));
+}
+</script>
+
+</body>
+</html>
