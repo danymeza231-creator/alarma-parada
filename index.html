@@ -9,23 +9,15 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#007bff">
 
-  <!-- Leaflet (Mapa) -->
+  <!-- Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
 
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      padding: 10px;
-    }
-    #map {
-      width: 100%;
-      height: 60vh;
-      border: 1px solid #ccc;
-    }
+    body { margin:0; font-family: Arial, sans-serif; padding:10px; }
+    #map { height: 60vh; }
     button, input {
       width: 100%;
       padding: 12px;
@@ -37,121 +29,107 @@
 
 <body>
 
-<h2>🚍 Alarma de Parada</h2>
+<h3>🚍 Alarma de Parada</h3>
 <p>Toca el mapa para elegir tu destino</p>
 
 <div id="map"></div>
 
-<input id="radius" type="number" value="500" placeholder="Distancia en metros">
+<input id="radius" type="number" value="500" placeholder="Radio en metros">
 <button id="startBtn">Activar alarma</button>
 
-<p id="status">Destino no seleccionado</p>
+<p id="status">Esperando ubicación…</p>
 
 <audio id="alarm" loop>
   <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
 </audio>
 
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- APP LOGICA -->
 <script>
-let destLat = null;
-let destLng = null;
-let marker = null;
+let userMarker, destMarker, circle;
+let destLat = null, destLng = null;
 
-// Crear mapa
+// MAPA sin ubicación fija (NO CDMX)
 const map = L.map('map');
 
+// MAPA BASE
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(map);
 
-navigator.geolocation.getCurrentPosition(
+// GPS REAL + SEGUIMIENTO
+navigator.geolocation.watchPosition(
   pos => {
     const lat = pos.coords.latitude;
     const lng = pos.coords.longitude;
 
-    map.setView([lat, lng], 15);
-    L.marker([lat, lng])
-      .addTo(map)
-      .bindPopup('📍 Estás aquí')
-      .openPopup();
+    if (!userMarker) {
+      map.setView([lat, lng], 15);
+      userMarker = L.marker([lat, lng]).addTo(map).bindPopup("📍 Estás aquí");
+    } else {
+      userMarker.setLatLng([lat, lng]);
+    }
+
+    if (destLat) {
+      const d = distanceMeters(lat, lng, destLat, destLng);
+      document.getElementById('status').textContent =
+        `Distancia: ${Math.round(d)} m`;
+
+      if (d <= parseInt(radius.value)) {
+        alarm.play();
+        alert("🚨 Estás por llegar");
+      }
+    }
   },
-  err => {
-    alert('No se pudo obtener tu ubicación. Activa el GPS.');
-    map.setView([19.4326, -99.1332], 13);
-  },
+  err => alert("Error GPS: " + err.message),
   { enableHighAccuracy: true }
 );
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// Seleccionar destino
+// DESTINO + RADIO
 map.on('click', e => {
   destLat = e.latlng.lat;
   destLng = e.latlng.lng;
 
-  if (marker) map.removeLayer(marker);
-  marker = L.marker([destLat, destLng]).addTo(map);
+  if (destMarker) map.removeLayer(destMarker);
+  if (circle) map.removeLayer(circle);
 
-  document.getElementById('status').textContent = 'Destino seleccionado';
+  destMarker = L.marker([destLat, destLng]).addTo(map);
+  circle = L.circle([destLat, destLng], {
+    radius: parseInt(radius.value),
+    color: 'red'
+  }).addTo(map);
+
+  localStorage.setItem('destino', JSON.stringify({ lat: destLat, lng: destLng }));
+  status.textContent = "Destino guardado";
 });
 
-// Calcular distancia
+// RESTAURAR DESTINO
+const saved = localStorage.getItem('destino');
+if (saved) {
+  const d = JSON.parse(saved);
+  destLat = d.lat;
+  destLng = d.lng;
+}
+
+// DISTANCIA
 function distanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = x => x * Math.PI / 180;
-
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-
   const a =
-    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLat/2)**2 +
     Math.cos(toRad(lat1)) *
     Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
-
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    Math.sin(dLon/2)**2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
-
-// Activar alarma
-document.getElementById('startBtn').onclick = () => {
-  if (!destLat) {
-    alert('Selecciona un destino en el mapa');
-    return;
-  }
-
-  const radius = parseInt(document.getElementById('radius').value);
-
-  navigator.geolocation.watchPosition(
-    pos => {
-      const d = distanceMeters(
-        pos.coords.latitude,
-        pos.coords.longitude,
-        destLat,
-        destLng
-      );
-
-      document.getElementById('status').textContent =
-        `Distancia: ${Math.round(d)} metros`;
-
-      if (d <= radius) {
-        document.getElementById('alarm').play();
-        alert('🚨 Estás por llegar a tu parada');
-      }
-    },
-    err => alert('Error GPS: ' + err.message),
-    { enableHighAccuracy: true }
-  );
-};
 </script>
 
 <!-- SERVICE WORKER -->
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('service-worker.js')
-    .then(() => console.log('Service Worker OK'))
-    .catch(err => console.error('SW error', err));
+  navigator.serviceWorker.register('service-worker.js');
 }
 </script>
 
